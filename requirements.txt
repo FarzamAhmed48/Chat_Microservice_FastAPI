@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+psycopg2-binary
+sqlalchemy
+python-dotenv
+python-socketio[asyncio_client]
+# python-socketio[asyncio_redis]
+uvicorn[standard]
+python-socketio[redis]
+redis 
+openai
+socketio
+python-socketio
+python-engineio
+simple-websocket
+aiohttp
