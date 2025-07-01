@@ -39,24 +39,25 @@
 
 import socketio
 import os
-mgr = socketio.AsyncRedisManager("redis://localhost:6379")
+# mgr = socketio.AsyncRedisManager("redis://localhost:6379")
 
 sio =socketio.AsyncServer(
     async_mode="asgi",
-    client_manager=mgr,
+    # client_manager=mgr,
     cors_allowed_origins="*"
 )
 
 
 @sio.event
 async def connect(sid, environ):
-    print("🔌 Client connected:", sid)
+    print(f"✅ Client connected: {sid}")
+    await sio.emit("message", f"Hello from server!", to=sid)
 
 @sio.event
 async def disconnect(sid):
-    print("❌ Client disconnected:", sid)
+    print(f"❌ Client disconnected: {sid}")
 
 @sio.event
 async def message(sid, data):
-    print("📨 Message received:", data)
-    await sio.emit("message", data)
+    print(f"📨 Message from {sid}: {data}")
+    await sio.emit("message", f"Echo: {data}", to=sid)

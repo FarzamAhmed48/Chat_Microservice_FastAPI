@@ -1,3 +1,4 @@
+import asyncio
 import socketio
 
 sio = socketio.AsyncClient()
@@ -15,7 +16,6 @@ async def message(data):
 async def disconnect():
     print("❌ Disconnected")
 
-import asyncio
 
 async def main():
     await sio.connect("http://localhost:8000")
