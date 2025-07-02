@@ -1,24 +1,51 @@
 import asyncio
 import socketio
 
-sio = socketio.AsyncClient()
+sio1 = socketio.AsyncClient()
+sio2 = socketio.AsyncClient()
 
-@sio.event
+@sio1.event
 async def connect():
-    print("✅ Connected to server")
-    await sio.emit("message", "Hello from Python client")
+    print("✅ [Client 1] Connected to server")
+    await sio1.emit("message", "Hello from Python Client 1")
 
-@sio.event
+@sio1.event
 async def message(data):
-    print("📨 Received:", data)
+    print("📨 [Client 1] Received:", data)
 
-@sio.event
+@sio1.event
 async def disconnect():
-    print("❌ Disconnected")
+    print("❌ [Client 1] Disconnected")
+
+
+@sio2.event
+async def connect():
+    print("✅ [Client 2] Connected to server")
+    await sio2.emit("message", "Hello from Python Client 2")
+
+@sio2.event
+async def message(data):
+    print("📨 [Client 2] Received:", data)
+
+@sio2.event
+async def disconnect():
+    print("❌ [Client 2] Disconnected")
 
 
 async def main():
-    await sio.connect("http://localhost:8000")
-    await sio.wait()
+    try:
+        await sio1.connect("http://localhost:8000")
+        print("✅ [Client 1] Connected")
+    except Exception as e:
+        print("❌ [Client 1] Connection failed:", e)
+
+    try:
+        await sio2.connect("http://localhost:8001")
+        print("✅ [Client 2] Connected")
+    except Exception as e:
+        print("❌ [Client 2] Connection failed:", e)
+
+    await asyncio.gather(sio1.wait(), sio2.wait())
+
 
 asyncio.run(main())
