@@ -13,14 +13,25 @@
 
 
 from typing import Union
-from fastapi import FastAPI,Depends
+from fastapi import FastAPI,Depends,APIRouter
 from sqlalchemy.orm import Session
+from fastapi.middleware.cors import CORSMiddleware
 from app.db.database import metadata, SessionLocal,engine  # ⬅️ import your reflected DB
 from sqlalchemy import text
 from app.sockets.handler import sio
 import socketio
+from socketio.asgi import ASGIApp
 app= FastAPI()
-asgi_app = socketio.ASGIApp(sio,other_asgi_app=app)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+asgi_app = ASGIApp(socketio_server= sio,other_asgi_app=app)
 
 def get_db():
     db = SessionLocal()
