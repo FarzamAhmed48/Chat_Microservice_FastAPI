@@ -31,7 +31,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
-asgi_app = ASGIApp(socketio_server= sio,other_asgi_app=app)
+asgi_app = ASGIApp(sio,app)
 
 def get_db():
     db = SessionLocal()
