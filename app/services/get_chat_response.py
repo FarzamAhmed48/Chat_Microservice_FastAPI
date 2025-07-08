@@ -7,7 +7,7 @@ from app.db.database import metadata,SessionLocal
 openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Main function
-async def get_chat_response(user_question,context_msg, preference_id, session_id,provider="OpenAI"):
+async def get_chat_response(user_question,context_msg, preference_id, session_id,provider="OpenAI",sio=None,sid=None):
     db=SessionLocal()
     try:
         messages_table = metadata.tables["messages"]
@@ -57,15 +57,33 @@ async def get_chat_response(user_question,context_msg, preference_id, session_id
         formatted_messages.append({"role": "user", "content": final_prompt})
 
         # 5. Generate AI response (RAG-style context + prompt)
-        response = await openai.chat.completions.create(
+        # response = await openai.chat.completions.create(
+        #     model="gpt-4",
+        #     messages=formatted_messages,
+        #     temperature=0.7
+        # )
+
+        # answer = response.choices[0].message.content.strip()
+        # # print("This is the answer",answer)
+        # return answer
+
+        full_reply = ""
+        stream = await openai.chat.completions.create(
             model="gpt-4",
             messages=formatted_messages,
-            temperature=0.7
+            temperature=0.7,
+            stream=True  # Enable streaming
         )
 
-        answer = response.choices[0].message.content.strip()
-        # print("This is the answer",answer)
-        return answer
+        # Send each chunk to frontend
+        async for chunk in stream:
+            content = chunk.choices[0].delta.content if chunk.choices[0].delta else ""
+            if content:
+                full_reply += content
+                if sio and sid:
+                    await sio.emit("receive_message", content, to=sid)  # emit partial content live
+
+        return full_reply
 
     except Exception as e:
         print("❌ Error in get_chat_response:", e)

@@ -120,7 +120,7 @@ async def send_message(sid, data):
         messages_str = orjson_serialize(all_messages)
         print("These are the printed messages",messages_str)
         # ✅ AI response
-        ai_reply = await get_chat_response(user_question,messages_str, preference, session_id)
+        ai_reply = await get_chat_response(user_question,messages_str, preference, session_id,provider="OpenAI",sio=sio,sid=sid)
 
         db.execute(insert(messages_table).values(
             content=ai_reply,
