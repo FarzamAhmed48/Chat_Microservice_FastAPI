@@ -7,6 +7,7 @@ from app.db.database import SessionLocal, metadata
 from sqlalchemy import text, select, insert, func, update
 import json
 import orjson
+from app.services.get_chat_response import get_chat_response
 from openai import AsyncOpenAI
 import os
 
@@ -75,85 +76,101 @@ async def new_session(sid, data):
 @sio.on("chat:message")
 async def send_message(sid, data):
     db = SessionLocal()
-    print("data is this",data)
     try:
-        chat_id = data.get("chatId")
+        session_id = data.get("chatId") or data.get("sessionId")
         user_id = data.get("userId")
-        user_question = data.get("userQuestion")
-        preference = data.get("selectedInterest", "General")
-        provider = data.get("provider", "OpenAI")
-        print("CHATID USERID USERQUES",chat_id,user_id,user_question,preference,provider)
-        if not chat_id or not user_id or not user_question:
-            await sio.emit("chat:error", {"message": "Missing required fields"}, to=sid)
+        user_question = data.get("userQuestion") or data.get("message")
+        preference = data.get("selectedInterest") or data.get("preference_id", "General")
+        images = data.get("images", [])
+        
+        if not session_id or not user_id:
+            await sio.emit("chat:error", {"message": "Missing session ID or user ID"}, to=sid)
             return
 
-        history_table = metadata.tables["messages"]
-        print("history is this",history_table)
-        result = db.execute(
-            select(func.max(history_table.c.sequence)).where(history_table.c.session_id == chat_id)
-        ).first()
-        print("result is this",result)   
-        max_seq = result[0] or 0
+        messages_table = metadata.tables["messages"]
 
-        db.execute(insert(history_table).values(
-            chat_id=chat_id,
-            user_id=user_id,
-            content=user_question,
-            role="user",
-            sequence=max_seq + 1,
-            preference=preference,
-            created_at=func.now()
-        ))
+        # ✅ Insert image messages
+        if images and isinstance(images, list):
+            for img in images:
+                url = img.get("url")
+                if url:
+                    db.execute(insert(messages_table).values(
+                        content=url,
+                        sender="user",
+                        session_id=session_id,
+                        created_at=func.now()
+                    ))
+
+        # ✅ Insert user text message
+        if user_question:
+            db.execute(insert(messages_table).values(
+                content=user_question,
+                sender="user",
+                session_id=session_id,
+                created_at=func.now()
+            ))
 
         db.commit()
 
-        # Context + AI Response
-        deps = {"db": db, "preference_id": preference}
-        result = await agent.run(user_question, deps=deps, tools=["get_context"])
-        ai_reply = str(result.data)
+        # ✅ Get all messages for AI
+        all_msgs_result = db.execute(
+            select(messages_table).where(messages_table.c.session_id == session_id).order_by(messages_table.c.created_at.asc())
+        )
+        all_messages = [dict(row._mapping) for row in all_msgs_result.fetchall()]
+        messages_str = orjson_serialize(all_messages)
+        print("These are the printed messages",messages_str)
+        # ✅ AI response
+        ai_reply = await get_chat_response(user_question,messages_str, preference, session_id)
 
-        db.execute(insert(history_table).values(
-            chat_id=chat_id,
-            user_id=user_id,
+        db.execute(insert(messages_table).values(
             content=ai_reply,
-            role="assistant",
-            sequence=max_seq + 2,
-            preference=preference,
+            sender="ai",
+            session_id=session_id,
             created_at=func.now()
         ))
 
-        # Title Generation
-        if max_seq == 0:
+        # ✅ Count messages
+        count_result = db.execute(
+            select(func.count()).select_from(messages_table).where(messages_table.c.session_id == session_id)
+        ).scalar()
+
+        # ✅ Generate title if first interaction (like in Node.js)
+        if count_result == 2:
             completion = await openai.chat.completions.create(
                 model="gpt-4",
                 messages=[
-                    {"role": "system", "content": "Generate a 2-4 word title summarizing this chat."},
-                    {"role": "user", "content": user_question}
+                    {
+                        "role": "system",
+                        "content": "Generate a very brief 2-4 word title summarizing this chat conversation. Return only the title text."
+                    },
+                    {
+                        "role": "user",
+                        "content": user_question
+                    }
                 ]
             )
             new_title = completion.choices[0].message.content.strip()
-            chats_table = metadata.tables["chats"]
+            chats_table = metadata.tables["chat_sessions"]
             db.execute(
                 update(chats_table)
-                .where(chats_table.c.id == chat_id)
+                .where(chats_table.c.id == session_id)
                 .values(title=new_title, updated_at=func.now())
             )
 
         db.commit()
 
+        # ✅ Emit the AI response back to the client
         await sio.emit("chat:response", {
-            "chatId": chat_id,
+            "chatId": session_id,
             "userQuestion": user_question,
             "response": ai_reply
-        }, room=chat_id)
+        }, room=session_id)
 
     except Exception as e:
         print("❌ Error in chat:message", e)
         await sio.emit("chat:error", {"message": "Failed to process message"}, to=sid)
     finally:
         db.close()
-
-
 @sio.on("get:chat:history")
 async def get_chat_history(sid, data):
     db = SessionLocal()
